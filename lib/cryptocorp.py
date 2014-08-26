@@ -75,6 +75,20 @@ def DeserializeExtendedKey(s):
         d['cK'] = bitcoin.GetPubKey(pubkey.pubkey, True)
     return d
 
+def propose_key(base_url, my_key, key, role):
+    oracle_id = str(uuid.uuid5(uuid.NAMESPACE_URL, "urn:digitaloracle.co:%s"%(my_key)))
+    propose_url = base_url + "keychains/" + oracle_id + "/keys"
+    h = http.Http()
+    body = json.dumps({
+        'walletAgent': "HDM-%s"%(ELECTRUM_VERSION),
+        'key': key,
+        'attributes' : { 'role' : role}
+        })
+    res, content = h.request(propose_url, 'POST', body, headers)
+    if res.status != 200:
+        print content
+        raise Exception("Error %d from Oracle"%(res.status))
+
 def make_keychain(base_url, my_key, backup_key, parameters, pii):
     oracle_id = str(uuid.uuid5(uuid.NAMESPACE_URL, "urn:digitaloracle.co:%s"%(my_key)))
     #TODO proper URL concat

@@ -4,6 +4,7 @@ import httplib, urllib
 import socket
 import hashlib
 import json
+import uuid
 from urlparse import urlparse, parse_qs
 try:
     import PyQt4
@@ -205,11 +206,6 @@ class Plugin(BasePlugin):
         hbox.addLayout(vbox)
         hbox.addLayout(vbox1)
 
-        vbox1.addWidget(QLabel(_('Backup Key (xpub)')+':'))
-        #backup = QLineEdit()
-        backup = QLineEdit('xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH')
-        vbox1.addWidget(backup)
-
         def fill_from_qr(button):
             res = self.scanner.scan_qr()
             if res is None:
@@ -218,11 +214,6 @@ class Plugin(BasePlugin):
                 QMessageBox.warning(self.gui.main_window, _('Error'), _('Not an extended public key'), _('OK'))
             backup.setText(res)
 
-        if self.scanner and self.scanner.is_enabled():
-            b = QPushButton(_("Scan QR code"))
-            b.clicked.connect(fill_from_qr)
-            vbox1.addWidget(b)
-
         vbox1.addWidget(QLabel(_('OTP (optional)')+':'))
 
         otp = QLineEdit()
@@ -230,6 +221,25 @@ class Plugin(BasePlugin):
 
         qrw = QRCodeWidget()
         vbox1.addWidget(qrw)
+
+        (oracle_url, my_key) = self.next_oracle_url_and_key()
+        cryptocorp.propose_key(self.base_url(), my_key, my_key, 'lead')
+        relate_url = "bitcoin:?%s"%(urllib.urlencode({'cryptocorp': oracle_url}))
+        vbox1.addWidget(QLabel(_('Link Mobile')+':'))
+        relate_qrw = QRCodeWidget(relate_url)
+        vbox1.addWidget(relate_qrw)
+        relate_qrw.update_qr()
+
+        vbox1.addWidget(QLabel(_('Backup Key (xpub)')+':'))
+        #backup = QLineEdit()
+        backup = QLineEdit('xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH')
+        vbox1.addWidget(backup)
+
+        if self.scanner and self.scanner.is_enabled():
+            b = QPushButton(_("Scan QR code"))
+            b.clicked.connect(fill_from_qr)
+            vbox1.addWidget(b)
+
 
         otp_secret = b32encode(("%030x"%(SystemRandom().getrandbits(120))).decode('hex'))
         print otp_secret
@@ -298,6 +308,13 @@ class Plugin(BasePlugin):
         self.window.update_receive_tab()
         self.window.tabs.setCurrentIndex(2)
 
+    def next_oracle_url_and_key(self):
+        i = self.wallet.next_oracle_account()
+        my_key = self.wallet.oracle_account(i)[0]
+        oracle_id = str(uuid.uuid5(uuid.NAMESPACE_URL, "urn:digitaloracle.co:%s"%(my_key)))
+        #TODO proper URL concat
+        oracle_url = self.base_url() + "keychains/" + oracle_id
+        return (oracle_url, my_key)
 
 def debug_trace():
   '''Set a tracepoint in the Python debugger that works with Qt'''
