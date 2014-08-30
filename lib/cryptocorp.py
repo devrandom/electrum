@@ -1,5 +1,10 @@
 import httplib2 as http
 import json
+import logging
+import threading
+from socketIO_client import SocketIO
+
+logging.basicConfig(level=logging.DEBUG)
 
 try:
         from urlparse import urlparse
@@ -84,10 +89,40 @@ def propose_key(base_url, my_key, key, role):
         'key': key,
         'attributes' : { 'role' : role}
         })
+    print "propose to %s %s"%(propose_url, body)
     res, content = h.request(propose_url, 'POST', body, headers)
     if res.status != 200:
         print content
         raise Exception("Error %d from Oracle"%(res.status))
+
+socketIO = None
+listen_thread = None
+keys_callback = None
+
+def listen_worker(base_url, oracle_id):
+    global socketIO
+    socketIO = SocketIO(base_url)
+    socketIO.on('keys', callback=on_keys)
+    socketIO.emit('subscribe', {'c': oracle_id})
+    socketIO.wait()
+
+def on_keys(*args):
+    keys_callback(args[0])
+
+def start_rendezvous(base_url, my_key, keys_cb):
+    global keys_callback
+    keys_callback = keys_cb
+    base_url = base_url.rstrip('/')
+    oracle_id = str(uuid.uuid5(uuid.NAMESPACE_URL, "urn:digitaloracle.co:%s"%(my_key)))
+    listen_thread = threading.Thread(target=listen_worker, args=(base_url,oracle_id))
+    listen_thread.setDaemon(True)
+    listen_thread.start()
+
+def stop_rendezvous():
+    global socketIO
+    if socketIO:
+        socketIO.disconnect()
+    socketIO = None
 
 def make_keychain(base_url, my_key, backup_key, parameters, pii):
     oracle_id = str(uuid.uuid5(uuid.NAMESPACE_URL, "urn:digitaloracle.co:%s"%(my_key)))
