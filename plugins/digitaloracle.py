@@ -223,7 +223,7 @@ class Plugin(BasePlugin):
         vbox1.addWidget(qrw)
 
         (oracle_url, my_key) = self.next_oracle_url_and_key()
-        cryptocorp.propose_key(self.base_url(), my_key, my_key, 'lead')
+
         relate_url = "bitcoin:?%s"%(urllib.urlencode({'cryptocorp': oracle_url}))
         vbox1.addWidget(QLabel(_('Link Mobile')+':'))
         relate_qrw = QRCodeWidget(relate_url)
@@ -231,8 +231,8 @@ class Plugin(BasePlugin):
         relate_qrw.update_qr()
 
         vbox1.addWidget(QLabel(_('Backup Key (xpub)')+':'))
-        #backup = QLineEdit()
-        backup = QLineEdit('xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH')
+        backup = QLineEdit()
+        #backup = QLineEdit('xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH')
         vbox1.addWidget(backup)
 
         if self.scanner and self.scanner.is_enabled():
@@ -256,7 +256,18 @@ class Plugin(BasePlugin):
 
         vbox.addLayout(ok_cancel_buttons(dialog))
         dialog.setLayout(hbox)
+
+        def keys_callback(keys):
+            for xpub, attrs in keys.iteritems():
+                if attrs['role'] == 'mobile':
+                    backup.setText(xpub)
+                    print xpub
+
+        cryptocorp.propose_key(self.base_url(), my_key, my_key, 'lead')
+        cryptocorp.start_rendezvous(self.base_url(), my_key, keys_callback)
+
         r = dialog.exec_()
+        cryptocorp.stop_rendezvous()
         if not r: return
 
         name = str(e.text())
