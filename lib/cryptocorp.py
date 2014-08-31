@@ -2,7 +2,13 @@ import httplib2 as http
 import json
 import logging
 import threading
-from socketIO_client import SocketIO
+try:
+    from socketIO_client import SocketIO
+    import socketIO_client
+    # the default timeout of 3 seconds causes xhr-polling to misbehave
+    socketIO_client.transports.TIMEOUT_IN_SECONDS = 30
+except ImportError:
+    SocketIO = None
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -110,6 +116,9 @@ def on_keys(*args):
     keys_callback(args[0])
 
 def start_rendezvous(base_url, my_key, keys_cb):
+    if SocketIO is None:
+        print "WARNING: cannot rendezvous without socketIO-client-0.5.3 installed"
+        return
     global keys_callback
     keys_callback = keys_cb
     base_url = base_url.rstrip('/')
