@@ -202,6 +202,14 @@ class Oracle_Account(account.BIP32_Account_2of3):
             print SerializeExtendedPublicKey(2, "00000000".decode('hex'), 0, v['c'].decode('hex'), v['cK'].decode('hex'))
         account.BIP32_Account_2of3.__init__(self, v)
 
+    def get_pending_transactions(self):
+        h = http.Http()
+        res, content = h.request("%s/transactions"%(self.oracle), 'GET', None, headers)
+        if res.status != 200:
+            raise Exception("Error %d from Oracle"%(res.status))
+        response = json.loads(content)
+        return response
+
     def keyID_elements(self, s):
         return [ 'oracle', 'bip32(%s,%s,%s)'%(self.c2.encode('hex'),self.K2.encode('hex'),s) ]
 

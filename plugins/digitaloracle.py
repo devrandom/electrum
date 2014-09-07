@@ -5,6 +5,7 @@ import socket
 import hashlib
 import json
 import uuid
+import datetime
 from urlparse import urlparse, parse_qs
 try:
     import PyQt4
@@ -13,7 +14,7 @@ except Exception:
 
 from PyQt4.QtGui import *
 from PyQt4.QtCore import *
-from gui.qt.util import ok_cancel_buttons
+from gui.qt.util import ok_cancel_buttons, close_button, MyTreeWidget
 import PyQt4.QtCore as QtCore
 import PyQt4.QtGui as QtGui
 from electrum.plugins import BasePlugin
@@ -22,6 +23,7 @@ from electrum.i18n import _
 from electrum_gui.qt import HelpButton, EnterButton
 
 from electrum import cryptocorp
+from electrum import Transaction
 
 from electrum_gui.qt.qrcodewidget import QRCodeWidget
 
@@ -99,6 +101,7 @@ class Plugin(BasePlugin):
         self.init()
         if not self.wallet:
             self.window.new_hdm_account = self.window.wallet_menu.addAction(_("&New HDM account"), self.new_account_dialog)
+            self.window.countersign = self.window.wallet_menu.addAction(_("&Countersign"), self.countersign_dialog)
         self.wallet = wallet
 
     def settings_widget(self, window):
@@ -170,6 +173,85 @@ class Plugin(BasePlugin):
         self.set_enabled(True)
         return True
 
+    def countersign_dialog(self):
+        if self.window.current_account is None:
+            self.show_message(_("Please select an account"))
+            return
+        dialog = QDialog(self.window)
+        dialog.setWindowTitle(_("Countersign Pending Transactions"))
+        vbox = QVBoxLayout(dialog)
+        dialog.setMinimumWidth(700)
+        vbox.addWidget(self.create_countersign_list());
+        self.update_countersign_list()
+        vbox.addLayout(close_button(dialog))
+        #dialog.setLayout(vbox)
+        r = dialog.exec_()
+
+    def create_countersign_list(self):
+        self.countersign_list = l = MyTreeWidget(self.window)
+        l.setColumnCount(4)
+        for i,width in enumerate([40,140,350]):
+            l.setColumnWidth(i, width)
+        l.setHeaderLabels( [ '', _('Date'), _('Description') , _('Amount')] )
+        #self.connect(l, SIGNAL('itemDoubleClicked(QTreeWidgetItem*, int)'), self.tx_label_clicked)
+        #self.connect(l, SIGNAL('itemChanged(QTreeWidgetItem*, int)'), self.tx_label_changed)
+
+        l.customContextMenuRequested.connect(self.create_countersign_menu)
+        return l
+
+    def create_countersign_menu(self, position):
+        self.countersign_list.selectedIndexes()
+        item = self.countersign_list.currentItem()
+        tx_hex = str(item.data(0, Qt.UserRole).toString())
+
+        if not item: return
+        menu = QMenu()
+        menu.addAction(_("Sign"), lambda: self.countersign(tx_hex))
+        menu.exec_(self.countersign_list.viewport().mapToGlobal(position))
+
+    def countersign(self, tx_hex):
+        tx = Transaction(tx_hex)
+        input_info = tx.get_input_info()
+
+        self.wallet.signrawtransaction(tx, input_info, [], None)
+        result, result_message = self.wallet.sendtx(tx)
+        if result:
+            self.show_message(_("Transaction successfully sent")+': %s' % (result_message))
+        else:
+            self.show_message(_("There was a problem sending your transaction:") + '\n %s' % (result_message))
+
+    def show_message(self, msg):
+        QMessageBox.information(self.window, _('Message'), msg, _('OK'))
+
+    def update_countersign_list(self):
+        self.countersign_list.clear()
+
+        tx_list = self.wallet.accounts[self.window.current_account].get_pending_transactions()
+        for api_tx in tx_list:
+            tx = Transaction(api_tx['bytes'])
+            time_str = 'unverified'
+            icon = QIcon(":icons/unconfirmed.png")
+            value = -reduce(lambda x, o:
+                    x + (0 if self.wallet.is_mine(o[0]) else o[1])
+                    , tx.outputs, 0)
+
+            if value is not None:
+                v_str = self.window.format_amount(value, True, whitespaces=True)
+            else:
+                v_str = '--'
+
+            description = ','.join(filter(None, map(lambda o:
+                    o[0] if self.wallet.is_mine(o[0]) else None
+                    , tx.outputs)))
+
+            item = QTreeWidgetItem( [ '', time_str, description, v_str] )
+            item.setData(0, Qt.UserRole, api_tx['bytes'])
+            item.setIcon(0, icon)
+            self.countersign_list.insertTopLevelItem(0,item)
+
+
+        self.countersign_list.setCurrentItem(self.countersign_list.topLevelItem(0))
+        
     def new_account_dialog(self):
         dialog = QDialog(self.window)
         dialog.setModal(1)
