@@ -518,6 +518,7 @@ class Transaction:
                 continue
 
             tx_for_sig = self.serialize( self.inputs, self.outputs, for_sig = i )
+            sighash = Hash( tx_for_sig.decode('hex'))
             for pubkey in redeem_pubkeys:
                 # check if we have the corresponding private key
                 if pubkey in keypairs.keys():
@@ -528,9 +529,9 @@ class Transaction:
                     secexp = pkey.secret
                     private_key = ecdsa.SigningKey.from_secret_exponent( secexp, curve = SECP256k1 )
                     public_key = private_key.get_verifying_key()
-                    sig = private_key.sign_digest_deterministic( Hash( tx_for_sig.decode('hex') ), hashfunc=hashlib.sha256, sigencode = ecdsa.util.sigencode_der )
-                    assert public_key.verify_digest( sig, Hash( tx_for_sig.decode('hex') ), sigdecode = ecdsa.util.sigdecode_der)
-                    signatures.append( sig.encode('hex') )
+                    sig = private_key.sign_digest_deterministic( sighash, hashfunc=hashlib.sha256, sigencode = ecdsa.util.sigencode_der )
+                    assert public_key.verify_digest( sig, sighash, sigdecode = ecdsa.util.sigdecode_der)
+                    self.insert_signature(signatures, sig, sighash, pubkey, redeem_pubkeys)
                     print_error("adding signature for", pubkey)
             
             txin["signatures"] = signatures
@@ -539,6 +540,30 @@ class Transaction:
         self.is_complete = is_complete
         self.raw = self.serialize( self.inputs, self.outputs )
 
+
+    def insert_signature(self, signatures, new_sig, sighash, sig_pubkey, pubkeys):
+        # keep track of which pubkeys we've seen already signing
+        pos = 0
+        for i, sig in enumerate(signatures):
+            while True:
+                # insert here if we see our own pubkey
+                if pubkeys[pos] == sig_pubkey:
+                    signatures.insert(i, new_sig.encode('hex'))
+                    return
+                # stop if we find the pubkey for the current sig
+                Q = ser_to_point(pubkeys[pos].decode('hex'))
+                pos = pos + 1
+                key = ecdsa.VerifyingKey.from_public_point(Q, curve = SECP256k1)
+                try:
+                    key.verify_digest(sig.decode('hex'), sighash, sigdecode = ecdsa.util.sigdecode_der)
+                    break
+                except ecdsa.keys.BadSignatureError:
+                    pass
+                if pos >= len(pubkeys):
+                    raise 'cannot verify signature with remaining pubkeys'
+            # Otherwise, continue looking at the next sig
+        # Our pubkey is later than all existing signers, append
+        signatures.append(new_sig.encode('hex'))
 
     def deserialize(self):
         vds = BCDataStream()
