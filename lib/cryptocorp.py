@@ -210,6 +210,14 @@ class Oracle_Account(account.BIP32_Account_2of3):
         response = json.loads(content)
         return response
 
+    def cancel_pending_transaction(self, spendId):
+        h = http.Http()
+        res, content = h.request("%s/transaction/%s/cancel"%(self.oracle, spendId), 'POST', '{}', headers)
+        if res.status != 200:
+            raise Exception("Error %d from Oracle"%(res.status))
+        response = json.loads(content)
+        return response
+
     def keyID_elements(self, s):
         return [ 'oracle', 'bip32(%s,%s,%s)'%(self.c2.encode('hex'),self.K2.encode('hex'),s) ]
 

@@ -51,6 +51,7 @@ class Plugin(BasePlugin):
         cryptocorp.set_recovery_mode(self.recovery())
         from electrum.plugins import plugins
         self.scanner = None
+        self.focused_account = None
         for plugin in plugins:
             if plugin.name == 'qrscanner':
                 self.scanner = plugin
@@ -127,6 +128,9 @@ class Plugin(BasePlugin):
         vbox.addWidget(xpub_line)
         qrw = QRCodeWidget(xpub)
         vbox.addWidget(qrw)
+        vbox.addWidget(QLabel(_("Transactions Pending Countersignature:")))
+        vbox.addWidget(self.create_countersign_list());
+        self.update_countersign_list(k)
 
     def settings_dialog(self):
         def check_url(url):
@@ -187,7 +191,7 @@ class Plugin(BasePlugin):
         #dialog.setLayout(vbox)
         r = dialog.exec_()
 
-    def create_countersign_list(self):
+    def create_countersign_list(self, account = None):
         self.countersign_list = l = MyTreeWidget(self.window)
         l.setColumnCount(4)
         for i,width in enumerate([40,140,350]):
@@ -202,20 +206,28 @@ class Plugin(BasePlugin):
     def create_countersign_menu(self, position):
         self.countersign_list.selectedIndexes()
         item = self.countersign_list.currentItem()
-        tx_hex = str(item.data(0, Qt.UserRole).toString())
+        i = int(str(item.data(0, Qt.UserRole).toString()))
 
         if not item: return
         menu = QMenu()
-        menu.addAction(_("Sign"), lambda: self.countersign(tx_hex))
+        menu.addAction(_("Sign"), lambda: self.counter_sign(self.pending_txs[i]))
+        menu.addAction(_("Cancel"), lambda: self.cancel_sign(self.pending_txs[i]))
         menu.exec_(self.countersign_list.viewport().mapToGlobal(position))
 
-    def countersign(self, tx_hex):
-        tx = Transaction(tx_hex)
+    def cancel_sign(self, pending):
+        self.wallet.accounts[self.focused_account].cancel_pending_transaction(pending['spendId'])
+        self.update_countersign_list(self.focused_account)
+
+    def counter_sign(self, pending):
+        tx = Transaction(pending['transaction']['bytes'])
         input_info = tx.get_input_info()
 
+        print tx.raw
         self.wallet.signrawtransaction(tx, input_info, [], None)
+        print tx.raw
         result, result_message = self.wallet.sendtx(tx)
         if result:
+            self.cancel_sign(pending)
             self.show_message(_("Transaction successfully sent")+': %s' % (result_message))
         else:
             self.show_message(_("There was a problem sending your transaction:") + '\n %s' % (result_message))
@@ -223,12 +235,13 @@ class Plugin(BasePlugin):
     def show_message(self, msg):
         QMessageBox.information(self.window, _('Message'), msg, _('OK'))
 
-    def update_countersign_list(self):
+    def update_countersign_list(self, k = None):
         self.countersign_list.clear()
 
-        tx_list = self.wallet.accounts[self.window.current_account].get_pending_transactions()
-        for api_tx in tx_list:
-            tx = Transaction(api_tx['bytes'])
+        self.focused_account = k if k else self.window.current_account
+        self.pending_txs = self.wallet.accounts[self.focused_account].get_pending_transactions()
+        for i, pending in enumerate(self.pending_txs):
+            tx = Transaction(pending['transaction']['bytes'])
             time_str = 'unverified'
             icon = QIcon(":icons/unconfirmed.png")
             value = -reduce(lambda x, o:
@@ -241,11 +254,11 @@ class Plugin(BasePlugin):
                 v_str = '--'
 
             description = ','.join(filter(None, map(lambda o:
-                    o[0] if self.wallet.is_mine(o[0]) else None
+                    o[0] if not self.wallet.is_mine(o[0]) else None
                     , tx.outputs)))
 
             item = QTreeWidgetItem( [ '', time_str, description, v_str] )
-            item.setData(0, Qt.UserRole, api_tx['bytes'])
+            item.setData(0, Qt.UserRole, str(i))
             item.setIcon(0, icon)
             self.countersign_list.insertTopLevelItem(0,item)
 
@@ -313,8 +326,8 @@ class Plugin(BasePlugin):
         relate_qrw.update_qr()
 
         vbox1.addWidget(QLabel(_('Backup Key (xpub)')+':'))
-        backup = QLineEdit()
-        #backup = QLineEdit('xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH')
+        #backup = QLineEdit()
+        backup = QLineEdit('xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH')
         vbox1.addWidget(backup)
 
         if self.scanner and self.scanner.is_enabled():
@@ -369,10 +382,13 @@ class Plugin(BasePlugin):
                         'period': 60,
                     },
                     {
-                        'delay': (int(delay_2_text) if delay_2_text != "" else None)
                         },
                     ],
                     }
+
+        if delay_2_text and delay_2_text != "":
+            parameters['levels'][1]['delay'] = int(delay_2_text)
+
         if phone_text and phone_text != "":
             parameters['levels'][1]['calls'] = ['phone', 'email']
             # TODO
@@ -384,6 +400,9 @@ class Plugin(BasePlugin):
                     'type': 'totp'
                     }
             parameters['levels'][1]['verifications'] = ['otp']
+
+        if not parameters['levels'][1]:
+            del parameters['levels'][1]
 
         pii = {
                 "phone": phone_text,
