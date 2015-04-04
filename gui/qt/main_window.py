@@ -879,9 +879,10 @@ class ElectrumWindow(QMainWindow):
             self.show_message(str(e))
             return
 
-        if tx.requires_fee(self.wallet.verifier) and fee < MIN_RELAY_TX_FEE:
-            QMessageBox.warning(self, _('Error'), _("This transaction requires a higher fee, or it will not be propagated by the network."), _('OK'))
-            return
+# FIXME need to recover input values after signature from Oracle
+#        if tx.requires_fee(self.wallet.verifier) and fee < MIN_RELAY_TX_FEE:
+#            QMessageBox.warning(self, _('Error'), _("This transaction requires a higher fee, or it will not be propagated by the network."), _('OK'))
+#            return
 
         if label:
             self.wallet.set_label(tx.hash(), label)
